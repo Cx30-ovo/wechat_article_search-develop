@@ -69,6 +69,11 @@ const sourceLabels = {
   scheduled: "定时 · 已保存计划",
   "scheduled-test": "测试 · 下一次定时配置",
 };
+const firstAccountText = "第一个开始";
+function normalizeStartAccount(value) {
+  const raw = String(value || "").trim();
+  return raw && raw !== firstAccountText ? raw : "";
+}
 
 function toast(message) {
   elements.toast.textContent = message;
@@ -92,7 +97,7 @@ function currentOptions() {
     scan_range: elements.scanRange.value,
     metrics: elements.metrics.value,
     max_accounts: Number(elements.maxAccounts.value || 0),
-    start_account: elements.startAccount.value,
+    start_account: normalizeStartAccount(elements.startAccount.value),
   };
 }
 
@@ -106,7 +111,9 @@ function optionsForRun(source) {
 }
 
 function optionText(options) {
-  return `范围=${rangeLabels[options.scan_range] || options.scan_range}，指标=${metricsLabels[options.metrics] || options.metrics}，每账号上限=${options.max_articles} 篇，起始=${options.start_account || "第一个"}，账号数=${options.max_accounts || "全部"}`;
+  const start = normalizeStartAccount(options.start_account);
+  const startLabel = start ? `“${start}”` : "第一个";
+  return `范围=${rangeLabels[options.scan_range] || options.scan_range}，指标=${metricsLabels[options.metrics] || options.metrics}，每账号上限=${options.max_articles} 篇，起始=${startLabel}，账号数=${options.max_accounts || "全部"}`;
 }
 
 function defaultScheduleRange(time, fallback = "today_yesterday") {
@@ -161,7 +168,7 @@ function scheduleRangesForSave() {
 
 function renderCurrentConfig() {
   const total = accountNames.length;
-  const start = elements.startAccount.value.trim();
+  const start = normalizeStartAccount(elements.startAccount.value);
   const startMatched = !start || accountNames.some(
     (name) => name.trim().toLowerCase() === start.toLowerCase()
   );
@@ -208,12 +215,12 @@ function renderAccountOptions(filterText) {
     option.dataset.value = value;
     fragment.appendChild(option);
   };
-  if (!keyword) append("", "第一个开始");
+  if (!keyword || keyword.includes("第一个")) append(firstAccountText, firstAccountText);
   const matches = accountNames
     .filter((name) => !keyword || name.toLowerCase().includes(keyword))
     ;
   matches.forEach((name) => append(name, name));
-  if (keyword && !matches.length) {
+  if (keyword && !keyword.includes("第一个") && !matches.length) {
     const empty = document.createElement("div");
     empty.className = "account-option-muted";
     empty.setAttribute("role", "option");
@@ -512,7 +519,7 @@ async function loadStatus() {
       elements.maxAccounts.value = config.max_accounts || 0;
       elements.allAccounts.checked = Number(elements.maxAccounts.value || 0) === 0;
       elements.maxAccounts.disabled = elements.allAccounts.checked;
-      elements.startAccount.value = config.start_account || "";
+      elements.startAccount.value = normalizeStartAccount(config.start_account) || firstAccountText;
       elements.scheduleEnabled.checked = config.enabled;
       elements.scheduleTimes.value = config.times.join(", ");
       renderScheduleRanges(config.times || [], config.schedule_ranges || {}, config.scan_range);
