@@ -1,0 +1,65 @@
+name: wechat-article-rpa
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: wechat-article-mongodb
+    restart: unless-stopped
+    ports:
+      # 默认仅本机可访问，并使用 27019 避免与常见的本机 MongoDB 冲突。
+      - "${MONGO_BIND_IP:-127.0.0.1}:${MONGO_PORT:-27019}:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-weixin}
+      MONGO_APP_USERNAME: ${MONGO_APP_USERNAME:-wechat_rpa}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD}
+    volumes:
+      - mongo_data:/data/db
+      - ./mongo/init.js:/docker-entrypoint-initdb.d/01-init.js:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --quiet --username \"$$MONGO_INITDB_ROOT_USERNAME\" --password \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval \"db.adminCommand('ping').ok\" | grep 1"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  control-api:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/control-api.Dockerfile
+    container_name: wechat-article-control-api
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    ports:
+      - "${CONTROL_API_BIND_IP:-127.0.0.1}:${CONTROL_API_PORT:-8020}:8020"
+    environment:
+      CONTROL_API_HOST: 0.0.0.0
+      CONTROL_API_PORT: 8020
+      CONTROL_API_TOKEN: ${CONTROL_API_TOKEN}
+      MONGO_URI: mongodb://${MONGO_APP_USERNAME:-wechat_rpa}:${MONGO_APP_PASSWORD}@mongodb:27017/${MONGO_DATABASE:-weixin}?authSource=${MONGO_DATABASE:-weixin}
+      MONGO_DATABASE: ${MONGO_DATABASE:-weixin}
+      MONGO_ARTICLE_COLLECTION: article
+      MONGO_TARGET_COLLECTION: collection_target
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8020/health', timeout=3)"
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  mongo_data:
+    name: wechat_article_mongo_data

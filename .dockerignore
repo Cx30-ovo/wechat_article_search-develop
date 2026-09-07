@@ -1,0 +1,13 @@
+.git
+.gitignore
+.venv
+.tools
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.env
+.env.*
+!.env.mongo.example
+output
+config/ui_position_cache.json

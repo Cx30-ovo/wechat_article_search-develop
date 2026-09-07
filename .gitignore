@@ -1,0 +1,21 @@
+output/
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+.tools/
+config/control_panel.json
+config/run_history.json
+config/account_aliases.json
+config/accounts_remaining.txt
+config/accounts.txt
+config/watch-accounts.txt
+config/ui_position_cache.json
+.env
+.env.*
+!.env.example
+!.env.mongo.example
+*.egg-info/
+
+# 本地界面验收截图仅用于开发时对比，不纳入产品代码仓库。
+design-qa-*.png
