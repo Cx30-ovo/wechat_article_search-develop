@@ -211,7 +211,11 @@ def serialize_article_item(document: dict[str, Any]) -> dict[str, Any]:
         "title": str(article.get("title") or "未命名文章"),
         "publish_time": publish_text,
         "url": str(article.get("url") or ""),
+        "read_count": latest.get("readCount"),
+        "like_count": latest.get("likeCount"),
         "share_count": latest.get("shareCount"),
+        "favorite_count": latest.get("favoriteCount"),
+        "comment_count": latest.get("commentCount"),
         "recognition_method": str(latest.get("recognitionMethod") or ""),
         "content_available": bool((article.get("content") or {}).get("text")),
         "last_updated_at": _format_datetime(document.get("lastUpdatedAt")),
@@ -704,7 +708,11 @@ def daily_report(
                         "article.publishDate": 1,
                         "article.url": 1,
                         "article.content.text": 1,
+                        "latestInteraction.readCount": 1,
+                        "latestInteraction.likeCount": 1,
                         "latestInteraction.shareCount": 1,
+                        "latestInteraction.favoriteCount": 1,
+                        "latestInteraction.commentCount": 1,
                     }
                 },
             ]
@@ -731,7 +739,11 @@ def daily_report(
                     "publish_time": _format_datetime(publish_date),
                     "publish_order": publish_date if isinstance(publish_date, datetime) else datetime.min,
                     "excerpt": _daily_excerpt((article.get("content") or {}).get("text")),
+                    "read_count": _daily_number(interaction.get("readCount")),
+                    "like_count": _daily_number(interaction.get("likeCount")),
                     "share_count": _daily_number(interaction.get("shareCount")),
+                    "favorite_count": _daily_number(interaction.get("favoriteCount")),
+                    "comment_count": _daily_number(interaction.get("commentCount")),
                 }
             )
 
@@ -776,7 +788,16 @@ def daily_report(
                     "account_name": item["account_name"],
                     "count": item["count"],
                     "articles": [
-                        {"title": row["title"], "publish_time": row["publish_time"], "url": row["url"]}
+                        {
+                            "title": row["title"],
+                            "publish_time": row["publish_time"],
+                            "url": row["url"],
+                            "read_count": row["read_count"],
+                            "like_count": row["like_count"],
+                            "share_count": row["share_count"],
+                            "favorite_count": row["favorite_count"],
+                            "comment_count": row["comment_count"],
+                        }
                         for row in latest_articles
                     ],
                 }

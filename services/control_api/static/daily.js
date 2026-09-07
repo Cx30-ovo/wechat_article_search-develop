@@ -14,6 +14,10 @@ function beijingDate(dayOffset = 0) {
 }
 function number(value) { return Number(value || 0).toLocaleString("zh-CN"); }
 function text(value, fallback = "—") { return String(value || fallback); }
+function interactionText(value) {
+  const source = value || {};
+  return `阅读 ${number(source.read_count)} · 点赞 ${number(source.like_count)} · 转发 ${number(source.share_count)} · 收藏 ${number(source.favorite_count)} · 评论 ${number(source.comment_count)}`;
+}
 function toast(message) { elements.toast.textContent = message; elements.toast.classList.add("show"); clearTimeout(toast.timer); toast.timer = setTimeout(() => elements.toast.classList.remove("show"), 3200); }
 function syncReportUrl() {
   // 日期切换不触发整页跳转，但需要同步到地址栏：刷新、复制链接或前进后退时仍能回到同一份日报。
@@ -37,7 +41,7 @@ function renderLead(item) {
   const title = document.createElement(item.url ? "a" : "h1"); title.className = "lead-title"; title.textContent = item.title;
   if (item.url) { title.href = item.url; title.target = "_blank"; title.rel = "noreferrer"; }
   const excerpt = document.createElement("p"); excerpt.className = "lead-excerpt"; excerpt.textContent = item.excerpt || "已采集文章正文，可打开原文阅读。";
-  const meta = document.createElement("p"); meta.className = "lead-meta"; meta.textContent = `${item.account_name} · ${item.publish_time} · 转发 ${number(item.share_count)}`;
+  const meta = document.createElement("p"); meta.className = "lead-meta"; meta.textContent = `${item.account_name} · ${item.publish_time} · ${interactionText(item)}`;
   content.append(category, title, excerpt, meta);
   const marker = document.createElement("div"); marker.className = "lead-marker"; marker.setAttribute("aria-hidden", "true"); marker.textContent = "今日主推";
   elements.lead.append(content, marker);
@@ -50,7 +54,7 @@ function renderHot(items) {
     const row = document.createElement("li");
     const rank = document.createElement("span"); rank.className = `hot-rank rank-${index + 1}`; rank.textContent = String(index + 1);
     const main = document.createElement("div"); main.className = "hot-main"; addLink(main, item, "hot-title");
-    const account = document.createElement("small"); account.textContent = item.account_name; main.appendChild(account);
+    const account = document.createElement("small"); account.textContent = `${item.account_name} · ${interactionText(item)}`; main.appendChild(account);
     const shares = document.createElement("span"); shares.className = "hot-share"; shares.textContent = number(item.share_count);
     row.append(rank, main, shares); elements.hot.appendChild(row);
   });
@@ -75,7 +79,7 @@ function renderFeed(items) {
     const title = document.createElement(item.url ? "a" : "h3"); title.className = "article-title"; title.textContent = item.title;
     if (item.url) { title.href = item.url; title.target = "_blank"; title.rel = "noreferrer"; }
     const excerpt = document.createElement("p"); excerpt.className = "article-excerpt"; excerpt.textContent = item.excerpt || "暂无可展示的正文摘要。";
-    const meta = document.createElement("p"); meta.className = "article-meta"; meta.textContent = `${item.publish_time} · 转发 ${number(item.share_count)}`;
+    const meta = document.createElement("p"); meta.className = "article-meta"; meta.textContent = `${item.publish_time} · ${interactionText(item)}`;
     article.append(account, title, excerpt, meta); elements.feed.appendChild(article);
   });
 }

@@ -30,6 +30,15 @@ function applyLinkedAccountFilter() {
 function params() { return new URLSearchParams({ date: elements.date.value || "all", account: elements.account.value.trim(), q: elements.query.value.trim(), min_share: elements.minimumShare.value.trim(), sort: elements.sort.value, limit: String(pageSize), offset: String(offset) }); }
 function number(value) { return typeof value === "number" ? value.toLocaleString("zh-CN") : "—"; }
 function safeText(value) { return value || "—"; }
+function interactionText(value) {
+  const source = value?.interaction || value || {};
+  const read = source.read_count ?? source.readCount;
+  const like = source.like_count ?? source.likeCount;
+  const share = source.share_count ?? source.shareCount;
+  const favorite = source.favorite_count ?? source.favoriteCount;
+  const comment = source.comment_count ?? source.commentCount;
+  return `阅读 ${number(read)} · 点赞 ${number(like)} · 转发 ${number(share)} · 收藏 ${number(favorite)} · 评论 ${number(comment)}`;
+}
 
 function render(items) {
   elements.list.replaceChildren();
@@ -38,7 +47,7 @@ function render(items) {
     const card = document.createElement("button"); card.className = "article-card"; card.type = "button";
     const heading = document.createElement("strong"); heading.textContent = item.title;
     const account = document.createElement("span"); account.className = "article-account"; account.textContent = item.account_name;
-    const meta = document.createElement("span"); meta.className = "article-card-meta"; meta.textContent = `${safeText(item.publish_time)} · 转发 ${number(item.share_count)} · ${item.content_available ? "正文已保存" : "正文待补齐"}`;
+    const meta = document.createElement("span"); meta.className = "article-card-meta"; meta.textContent = `${safeText(item.publish_time)} · ${interactionText(item)} · ${item.content_available ? "正文已保存" : "正文待补齐"}`;
     card.append(heading, account, meta); card.addEventListener("click", () => openArticle(item.id)); elements.list.appendChild(card);
   });
 }
@@ -59,7 +68,7 @@ async function openArticle(id) {
   elements.drawer.hidden = false; elements.backdrop.hidden = false; elements.drawerContent.textContent = "正在读取正文…";
   try {
     const response = await fetch(`/api/articles/${encodeURIComponent(id)}`); const data = await response.json(); if (!response.ok || !data.ok) throw new Error(data.message || "读取文章详情失败"); const item = data.item;
-    elements.drawerAccount.textContent = item.account_name; elements.drawerTitle.textContent = item.title; elements.drawerMeta.textContent = `${safeText(item.publish_time)} · 转发 ${number(item.interaction?.shareCount)} · 最近采集 ${safeText(item.last_updated_at)}`;
+    elements.drawerAccount.textContent = item.account_name; elements.drawerTitle.textContent = item.title; elements.drawerMeta.textContent = `${safeText(item.publish_time)} · ${interactionText(item)} · 最近采集 ${safeText(item.last_updated_at)}`;
     elements.drawerUrl.href = item.url || "#"; elements.drawerUrl.hidden = !item.url; elements.drawerContent.textContent = item.content || "这篇文章尚未保存纯文本正文。";
   } catch (error) {
     // 抽屉内直接说明失败原因；仅弹 Toast 很容易在几秒后消失，用户无法判断是否需要重试。

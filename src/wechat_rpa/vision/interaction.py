@@ -68,6 +68,17 @@ class InteractionOCR:
 
     def extract_share(self, screenshot: Image.Image) -> dict[str, Any]:
         """只定位转发图标并识别其右侧数字，减少模板匹配和 OCR 范围。"""
+        try:
+            metrics = self.extract(screenshot)
+            if metrics.get("share_count") is not None:
+                return {
+                    "share_count": metrics["share_count"],
+                    "details": metrics["details"],
+                }
+        except Exception:
+            # 全部图标不可用时退回只读转发数的旧路径。
+            pass
+
         gray = _to_gray(screenshot)
         height, width = gray.shape
         search_top = round(height * 0.82)
@@ -133,24 +144,37 @@ class InteractionOCR:
         bar_left = ordered[0][0]
         bar_top = max(0, min(item[1] for item in ordered) - 8)
         bar_right = min(width, ordered[-1][0] + ordered[-1][2] + 80)
-        bar_bottom = min(height, max(item[1] + item[3] for item in ordered) + 8)
+        # 微信文章底部数字通常位于图标正下方；保留足够的垂直余量，
+        # 避免只截到图标而漏掉数字或“写留言”。
+        bar_bottom = min(height, max(item[1] + item[3] for item in ordered) + 34)
         bar = screenshot.crop((bar_left, bar_top, bar_right, bar_bottom))
         result, _ = self.ocr(bar)
 
-        # 根据 OCR 文本中心点的横坐标，归属到其左侧最近的互动图标。
+        # 根据 OCR 文本中心点，归属到水平位置最接近的互动图标。
         assigned: dict[str, list[str]] = {name: [] for name in METRIC_NAMES}
         for item in result or []:
             box, text = item[0], str(item[1])
             center_x = bar_left + sum(point[0] for point in box) / len(box)
-            # OCR 偶尔会把线框图标误认成数字，落在任一图标范围内的文本直接忽略。
+            center_y = bar_top + sum(point[1] for point in box) / len(box)
+            # OCR 偶尔会把线框图标误认成数字；只有中心点落在图标框内的噪声需要忽略，
+            # 图标正下方的数字仍保留并按最近的图标归属。
             if any(data[0] - 3 <= center_x <= data[0] + data[2] + 3 for data in ordered):
-                continue
+                if any(
+                    data[1] <= center_y <= data[1] + data[3]
+                    for data in ordered
+                ):
+                    continue
             candidates = [
                 (name, data) for name, data in matches.items()
-                if center_x >= data[0] + data[2] - 4
+                if center_x >= data[0] - 4
             ]
             if candidates:
-                name = max(candidates, key=lambda candidate: candidate[1][0])[0]
+                name = min(
+                    candidates,
+                    key=lambda candidate: abs(
+                        center_x - (candidate[1][0] + candidate[1][2] / 2)
+                    ),
+                )[0]
                 assigned[name].append(text)
 
         values: dict[str, Any] = {}
