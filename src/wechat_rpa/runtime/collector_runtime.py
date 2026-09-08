@@ -98,6 +98,8 @@ _SEARCH_SCAN_RECOVERED_PROFILE: dict[str, "WindowInfo"] = {}
 # 必须以“从同一搜一搜工作面出发并再次返回该工作面”证明完整绕行一圈，不能
 # 再把固定次数用作“目标标签不存在”的事实依据。
 WIN11_MAX_TAB_SCAN = 96
+# 全量历史模式允许持续翻页；该上限只作为异常防死循环保护，正常到达“无更多消息”会提前结束。
+HISTORY_PROFILE_PAGE_LIMIT = int(os.getenv("HISTORY_PROFILE_PAGE_LIMIT", "2000"))
 
 
 class ProfileTemporarilyUnverifiedError(RuntimeError):
@@ -5784,13 +5786,15 @@ def is_older_time_boundary(value: str) -> bool:
 def is_recent_time_group(value: str, scan_range: str = "today_yesterday") -> bool:
     text = unicodedata.normalize("NFKC", value or "").strip()
     if not text or is_older_time_boundary(text):
+        if scan_range == "all" and text:
+            return True
         return False
     if "昨天" in text:
-        return scan_range in {"yesterday", "today_yesterday"}
+        return scan_range in {"all", "yesterday", "today_yesterday"}
     if "今天" in text:
-        return scan_range in {"today", "today_yesterday"}
+        return scan_range in {"all", "today", "today_yesterday"}
     # 当天推送在微信中通常只显示 HH:MM。
-    return scan_range in {"today", "today_yesterday"} and bool(
+    return scan_range in {"all", "today", "today_yesterday"} and bool(
         re.fullmatch(r"\d{1,2}:\d{2}", text)
     )
 
@@ -5802,6 +5806,8 @@ def publish_time_matches_scan_range(
     reference_date: date | None = None,
 ) -> bool:
     """按北京时间复核文章真实发布时间是否属于本次任务范围。"""
+    if scan_range == "all":
+        return True
     if scan_range not in {"today", "yesterday", "today_yesterday"}:
         raise ValueError(f"未知扫描范围：{scan_range}")
     publish_value = value if isinstance(value, datetime) else parse_publish_time(str(value or ""))
@@ -5950,7 +5956,7 @@ def collect_searched_account(
         seen_cards: set[str] = set()
         processed_count = 0
         stop_reason = "达到最大翻页数"
-        for page_index in range(1, 13):
+        for page_index in range(1, (HISTORY_PROFILE_PAGE_LIMIT if scan_range == "all" else 12) + 1):
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError(f"账号 {account_name} 达到任务超时限制")
             feed = analyze_account_window(
@@ -5995,7 +6001,7 @@ def collect_searched_account(
                 if reason:
                     skipped.append({"title": title, "reason": reason})
                     continue
-                if processed_count >= max_articles:
+                if max_articles > 0 and processed_count >= max_articles:
                     stop_reason = f"达到文章上限 {max_articles}"
                     break
 
@@ -6077,7 +6083,7 @@ def collect_searched_account(
                     # 三次尝试都失败后才发出终态事件；控制台据此计入警告。
                     log_event("article_collect_failed", **failure)
 
-            if processed_count >= max_articles:
+            if max_articles > 0 and processed_count >= max_articles:
                 stop_reason = f"达到文章上限 {max_articles}"
                 break
             if older_boundary:
@@ -6122,6 +6128,7 @@ def collect_profile_account(
     metric_mode: str = "all",
     task_timeout_minutes: float | None = None,
     scan_range: str = "today_yesterday",
+    history_resume_pages: int = 0,
     recent_card_limit: int | None = None,
     known_urls: set[str] | None = None,
     stop_after_known_url: bool = False,
@@ -6141,6 +6148,7 @@ def collect_profile_account(
         write_mongo=write_mongo,
         metric_mode=metric_mode,
         scan_range=scan_range,
+        history_resume_pages=history_resume_pages,
     )
     """从搜一搜进入公众号资料窗口，采集今天和昨天的文章。"""
     profile_window: WindowInfo | None = reuse_profile_window
@@ -6348,7 +6356,24 @@ def collect_profile_account(
             observed_name=observed_account_name,
         )
 
-        for page_index in range(1, 13):
+        if history_resume_pages > 0:
+            log_event(
+                "history_resume_scroll_start",
+                account=account_name,
+                pages=history_resume_pages,
+            )
+            activate_window(profile_window.hwnd)
+            for _ in range(history_resume_pages):
+                scroll_window_down(profile_window.rect)
+                time.sleep(0.2)
+            log_event(
+                "history_resume_scroll_finished",
+                account=account_name,
+                pages=history_resume_pages,
+            )
+
+        for page_index in range(1, (HISTORY_PROFILE_PAGE_LIMIT if scan_range == "all" else 12) + 1):
+            absolute_page = history_resume_pages + page_index
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError(f"账号 {account_name} 达到任务超时限制")
             # 每次滚屏后的顶部可能是上一分区残留的贴图/视频卡片。不能沿用
@@ -6357,8 +6382,8 @@ def collect_profile_account(
             current_group = ""
             feed = analyze_profile_window(
                 profile_window,
-                output_dir / "profile" / f"page-{page_index:02d}",
-                move_to_latest=page_index == 1,
+                output_dir / "profile" / f"page-{absolute_page:03d}",
+                move_to_latest=page_index == 1 and history_resume_pages == 0,
                 expected_name=account_name,
                 client=client,
                 allow_vl=allow_vl,
@@ -6368,7 +6393,7 @@ def collect_profile_account(
             log_event(
                 "profile_page_analyzed",
                 account=account_name,
-                page=page_index,
+                page=absolute_page,
                 time_labels=[item.get("text") for item in feed.get("time_labels", [])],
                 article_count=len(feed.get("articles", [])),
             )
@@ -6408,7 +6433,7 @@ def collect_profile_account(
                     # 不猜测没有日期分组的卡片属于哪一天，等待下一屏的时间标签。
                     ungrouped_card_count += 1
                     continue
-                if older_boundary or not is_recent_time_group(current_group, scan_range):
+                if not is_recent_time_group(current_group, scan_range):
                     out_of_range_card_count += 1
                     continue
                 title = str(event.get("title") or "").strip()
@@ -6485,7 +6510,7 @@ def collect_profile_account(
                         }
                     )
                     continue
-                if processed_count >= max_articles:
+                if max_articles > 0 and processed_count >= max_articles:
                     stop_reason = f"达到文章上限 {max_articles}"
                     break
 
@@ -6707,7 +6732,7 @@ def collect_profile_account(
                     recent_limit_reached = True
                     break
 
-            if processed_count >= max_articles:
+            if max_articles > 0 and processed_count >= max_articles:
                 stop_reason = f"达到文章上限 {max_articles}"
                 break
             if known_card_stop:
@@ -6718,7 +6743,12 @@ def collect_profile_account(
             if recent_limit_reached:
                 stop_reason = f"达到本轮最新卡片上限 {recent_card_limit}"
                 break
-            if older_boundary:
+            if scan_range == "all" and older_boundary and not any(
+                event["kind"] == "article" for event in events
+            ):
+                stop_reason = "已翻到最早历史消息"
+                break
+            if older_boundary and scan_range != "all":
                 stop_reason = f"遇到更早时间边界：{older_boundary}"
                 break
             if profile_window.page_kind == "embedded_profile_tab":
@@ -7109,7 +7139,18 @@ def parse_args() -> argparse.Namespace:
         help="本次最多采集的公众号数量，0 表示全部",
     )
     parser.add_argument("--account-index", type=int, default=0)
-    parser.add_argument("--max-articles", type=int, default=20)
+    parser.add_argument(
+        "--max-articles",
+        type=int,
+        default=20,
+        help="每账号最多成功采集文章数；0 表示不限制，配合 --scan-range all 用于历史全量",
+    )
+    parser.add_argument(
+        "--history-resume-pages",
+        type=int,
+        default=0,
+        help="历史全量模式从最新位置向下跳过指定屏数后继续采集，用于账号中断续跑",
+    )
     parser.add_argument(
         "--task-timeout-minutes",
         type=float,
@@ -7130,9 +7171,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--scan-range",
-        choices=("today", "yesterday", "today_yesterday"),
+        choices=("today", "yesterday", "today_yesterday", "all"),
         default="today_yesterday",
-        help="文章日期范围：today 今天、yesterday 昨天、today_yesterday 今天和昨天",
+        help="文章日期范围：today/yesterday/today_yesterday 为增量；all 持续翻页采集全部历史",
     )
     parser.add_argument(
         "--stop-after-known-url",
@@ -7404,6 +7445,10 @@ def main() -> None:
                         "known_card_title_signatures": known_card_signatures,
                         "stop_after_known_card_signature": True,
                     }
+                if args.history_resume_pages > 0:
+                    if args.discovery_mode != "sogou-profile":
+                        raise ValueError("--history-resume-pages 仅支持 sogou-profile 历史模式")
+                    collector_kwargs["history_resume_pages"] = args.history_resume_pages
                 summaries.append(collector(
                     client,
                     account_name,

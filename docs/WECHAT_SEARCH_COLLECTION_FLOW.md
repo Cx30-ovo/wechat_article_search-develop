@@ -180,8 +180,24 @@ RapidOCR 可能把资料页同一导航行识别成“贴图文章·视频号”
 - `today`：资料页先筛选“今天”，文章页再按真实发布时间复核；
 - `yesterday`：资料页先筛选“昨天”，文章页再次复核；
 - `today_yesterday`：允许两类时间分组；
+- `all`：独立历史全量模式，持续向下翻页，直到资料页显示“无更多消息”或最早历史边界；
 - 遇到明确的星期、年月日或更早日期边界时停止继续翻页；
 - 没有本屏日期证据的卡片标记为 `ungrouped`，不猜测其归属日期。
+
+历史全量应使用独立命令，不进入日常轮询，也不带 `--stop-after-known-url`：
+
+```powershell
+.venv\Scripts\python.exe -m wechat_rpa.runtime.collector_runtime --run-search-accounts --live --accounts-from-mongo --write-mongo --metrics all --scan-range all --max-articles 0 --task-timeout-minutes 0
+```
+
+`--max-articles 0` 表示不限制每账号文章数；单账号超时或默认 12 页上限均不适用于历史全量模式。
+
+若单账号在途中中断，可从最近一张成功分析的资料页继续。例如日志最后出现 `page=679`，
+续跑时跳过前面的 678 屏：
+
+```powershell
+.venv\Scripts\python.exe -m wechat_rpa.runtime.collector_runtime --run-search-accounts --live --accounts-from-mongo --write-mongo --metrics all --scan-range all --max-articles 0 --task-timeout-minutes 0 --start-account "厦门日报" --history-resume-pages 678
+```
 
 ### 4.5 打开文章与提取正文
 

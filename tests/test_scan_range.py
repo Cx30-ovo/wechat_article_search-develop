@@ -43,6 +43,17 @@ class ScanRangeTests(unittest.TestCase):
             )
         )
 
+    def test_all_range_accepts_historical_time_groups(self) -> None:
+        self.assertTrue(is_recent_time_group("昨天", "all"))
+        self.assertTrue(is_recent_time_group("8月17日", "all"))
+        self.assertTrue(is_recent_time_group("2025年3月2日", "all"))
+        self.assertTrue(is_recent_time_group("星期三", "all"))
+        self.assertTrue(
+            publish_time_matches_scan_range(
+                datetime(2022, 1, 1, 8, 0), "all", reference_date=date(2026, 8, 5)
+            )
+        )
+
     def test_title_signature_does_not_require_interaction_counts(self) -> None:
         signature = build_card_title_signature(
             "今天",
